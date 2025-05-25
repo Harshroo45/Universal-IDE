@@ -154,7 +154,7 @@ const Header = ({ isDarkMode, toggleTheme }) => {
             aria-label="Go to Online IDE homepage"
             className="text-2xl ml-2.5 font-bold tracking-wide hover:text-gray-300 transition-colors duration-200 focus:outline-none"
           >
-            Online IDE
+            Universal IDE
           </Link>
 
           <nav className="hidden md:flex space-x-6">

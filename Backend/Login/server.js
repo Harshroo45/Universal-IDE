@@ -1,12 +1,19 @@
-const express = require('express');
-const path = require('node:path');
-const mongoose = require('mongoose');
-const crypto = require('node:crypto');
-const nodemailer = require('nodemailer');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import { fileURLToPath } from 'url';
+import path from 'node:path';
+import mongoose from 'mongoose';
+import crypto from 'node:crypto';
+import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { dirname } from 'path';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 
@@ -226,23 +233,23 @@ const userSchema = new mongoose.Schema({
 		}),
 	},
 	sharedLinks: {
-		type: [{
-			shareId: {
-				type: String,
-				required: true,
-				unique: true,
-			},
-			title: {
-				type: String,
-				required: true,
-			},
-			expiryTime: {
-				type: Date,
-				required: true,
-			},
-		}, ],
-		default: [],
-	},
+  type: [{
+    shareId: {
+      type: String,
+      required: true,
+      index: { unique: true, sparse: true }  // Changed from just unique
+    },
+    title: {
+      type: String,
+      required: true
+    },
+    expiryTime: {
+      type: Date,
+      required: true
+    }
+  }],
+  default: []
+},
 });
 
 const logsSchema = new mongoose.Schema({
@@ -302,12 +309,31 @@ async function checkAndConnectDB() {
 				.connect(MONGO_URI)
 				.then(() => console.log('MongoDB connected'))
 				.catch((err) => console.log('Error connecting to MongoDB:', err));
+			
+			// Initialize indexes
+			try {
+				await User.init();
+				console.log('MongoDB indexes verified');
+			} catch (err) {
+				console.error('Index setup error:', err);
+			}
+			
 			console.log('MongoDB connected');
 		} catch (err) {
 			console.error('Error connecting to MongoDB:', err);
 			throw new Error('Database connection failed');
 		}
 	}
+}
+
+// Add this after MongoDB connection is established
+try {
+  const collection = mongoose.connection.collection('sharedLinks');
+  await collection.dropIndex('idx_sharedLinks_shareId');
+  // Now create your new index
+  await collection.createIndex({ shareId: 1 }, { name: 'idx_sharedLinks_shareId' });
+} catch (error) {
+  console.log('Index setup:', error.message);
 }
 
 async function logUserAction(user, actionType) {
@@ -356,15 +382,30 @@ async function sendOtpEmail(email, otp) {
 		subject: 'Online IDE - Your OTP for Email Verification',
 		html: `
             <html>
-                <body>
-                    <h2>Welcome to Our Online IDE!</h2>
-                    <p>We received a request to verify your email address.</p>
-                    <p>To complete your email verification, please use the OTP below:</p>
-                    <h3 style="color: #4CAF50;">Your OTP: <strong>${otp}</strong></h3>
-                    <p><i>This OTP will expire in 10 minutes. If you did not request this, please ignore this email.</i></p>
-                    <p><a href="https://online-ide-cyan.vercel.app/" target="_blank" style="color: #007BFF;">Online IDE</a></p>
-                    <p>Thank you for choosing our service!</p>
-                </body>
+			<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; padding: 20px;">
+    <h2 style="color: #2E86C1;">Welcome to Our Universal IDE!</h2>
+    <p>We’ve received a request to verify your email address.</p>
+    <p>To complete the verification process, please use the One-Time Password (OTP) provided below:</p>
+    
+    <h3 style="color: #4CAF50;">Your OTP: <strong>${otp}</strong></h3>
+    
+    <p style="font-size: 0.95em;"><em>This OTP is valid for 10 minutes. If you did not initiate this request, please disregard this message.</em></p>
+    
+    <p>Access the IDE here: 
+        <a href="https://online-ide-cyan.vercel.app/" target="_blank" style="color: #007BFF; text-decoration: none;">
+            Visit Online IDE
+        </a>
+    </p>
+    
+    <p>Thank you for choosing our service!</p>
+    
+    <hr style="margin: 30px 0; border: none; border-top: 1px solid #ccc;">
+    
+    <p style="font-size: 0.9em; color: #777;">Warm regards,<br>
+    <strong>Harshal Khadatare</strong><br>
+    Developer, Universal IDE</p>
+</body>
+
             </html>
         `,
 	};
@@ -1383,6 +1424,12 @@ app.post('/api/sharedLink/count', async (req, res) => {
 
 		res.status(204).send();
 	} catch (err) {
+		if (err.code === 11000) {
+			return res.status(400).json({
+				msg: 'Share ID already exists',
+				suggestion: 'Generate a new unique share ID'
+			});
+		}
 		console.error(err);
 		res.status(500).json({
 			msg: 'Server error',
